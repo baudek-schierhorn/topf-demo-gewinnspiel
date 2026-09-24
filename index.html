@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Wo versteckt sich der Hase?</title>
+  <meta name="description" content="Interaktiver Prototyp eines Oster-Hütchenspiels mit drei Tontöpfen.">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cpath fill='%239c542f' d='M12 18h40l-5 36H17z'/%3E%3Cpath fill='%23c97845' d='M8 12h48v13H8z'/%3E%3Cpath fill='%237b2cbf' d='M25 12c-6-8 1-13 7-3 6-10 13-5 7 3z'/%3E%3C/svg%3E">
+  <style>
+    :root{--purple:#6f2da8;--purple-dark:#472070;--cream:#fff7d6;--gold:#f5c242}
+    *{box-sizing:border-box}
+    html,body{margin:0;min-height:100%;font-family:Arial,Helvetica,sans-serif;color:#fff}
+    body{min-height:100svh;overflow:hidden;background:radial-gradient(circle at 50% 34%,#8f48c7 0,#7130a7 42%,#58207f 100%)}
+    body::before{content:"";position:fixed;inset:0;background:radial-gradient(circle at 18% 15%,rgba(255,255,255,.13),transparent 24%),radial-gradient(circle at 85% 80%,rgba(41,13,63,.22),transparent 33%)}
+    main{position:relative;min-height:100svh;display:grid;grid-template-rows:1fr auto;isolation:isolate}
+    .game{position:relative;width:min(100%,1050px);height:clamp(430px,78vh,760px);margin:auto;touch-action:manipulation}
+    .table{position:absolute;left:4%;right:4%;bottom:5%;height:20%;border-radius:50%;background:radial-gradient(ellipse,rgba(48,19,72,.34),rgba(48,19,72,.08) 66%,transparent 72%);filter:blur(3px)}
+    .shell{position:absolute;left:50%;top:20%;width:clamp(112px,20vw,235px);height:clamp(245px,42vw,455px);translate:-50% 0;border:0;padding:0;background:transparent;cursor:pointer;outline:none;-webkit-tap-highlight-color:transparent}
+    .shell:disabled{cursor:default}
+    .shell:focus-visible .pot{filter:drop-shadow(0 0 5px #fff) drop-shadow(0 0 13px var(--gold))}
+    .content-layer{position:absolute;z-index:2;inset:0;overflow:hidden;clip-path:inset(0 0 39% 0)}
+    .content{position:absolute;left:50%;bottom:38%;translate:-50% 0;width:52%;max-height:66%;object-fit:contain;filter:drop-shadow(0 7px 6px rgba(25,20,6,.28));transition:transform .58s cubic-bezier(.55,.02,.22,1)}
+    .content.bunny{width:57%}
+    .shell.hidden .content{transform:translateY(105%);opacity:0;visibility:hidden;transition:transform .58s cubic-bezier(.55,.02,.22,1),opacity 0s .48s,visibility 0s .48s}
+    .shell.reveal .content{transform:translateY(-18%);transition-timing-function:cubic-bezier(.18,.75,.25,1.28)}
+    .pot{position:absolute;left:50%;bottom:4%;translate:-50% 0;width:100%;height:auto;transition:transform .22s,filter .22s}
+    .pot-back{z-index:1;filter:drop-shadow(0 18px 13px rgba(34,26,7,.3))}
+    .pot-front{z-index:3;clip-path:inset(25% 0 0 0)}
+    .ready .shell:not(:disabled):hover .pot{transform:translateY(-7px) scale(1.025)}
+    .ready .shell:not(:disabled):hover .pot-back{filter:drop-shadow(0 22px 14px rgba(34,26,7,.34)) brightness(1.04)}
+    .result{position:absolute;z-index:5;left:50%;top:7%;translate:-50% 0;min-width:min(86vw,430px);padding:15px 24px;border-radius:999px;background:rgba(63,33,103,.94);box-shadow:0 12px 35px rgba(35,16,53,.28);font-size:clamp(1rem,2.2vw,1.3rem);font-weight:800;text-align:center;opacity:0;transform:translateY(-15px);pointer-events:none;transition:.3s}
+    .result.show{opacity:1;transform:translateY(0)}
+    .controls{display:flex;justify-content:center;padding:0 20px clamp(22px,4vh,42px)}
+    #start{border:2px solid rgba(255,255,255,.65);border-radius:999px;padding:15px 30px;background:linear-gradient(180deg,#fffef7,var(--cream));color:var(--purple-dark);font-size:1rem;font-weight:800;box-shadow:0 9px 0 #d9c47f,0 16px 28px rgba(36,22,54,.3);cursor:pointer;min-width:210px}
+    #start:hover{filter:brightness(1.08)}
+    #start:active{transform:translateY(5px);box-shadow:0 4px 0 #d9c47f,0 9px 18px rgba(36,22,54,.23)}
+    #start:disabled{opacity:.68;cursor:default}
+    @media(max-width:600px){.game{height:76vh;min-height:430px}.shell{top:23%;width:31vw;height:61vw;min-height:235px;max-height:330px}.content{bottom:39%}.pot{bottom:4%}.result{top:4%}}
+    @media(prefers-reduced-motion:reduce){.content,.pot,.result{transition-duration:.01ms!important}}
+  </style>
+</head>
+<body>
+  <main>
+    <section class="game" id="game" aria-label="Hütchenspiel mit drei Tontöpfen">
+      <div class="table"></div>
+      <div class="result" id="result" aria-live="assertive"></div>
+    </section>
+    <div class="controls"><button id="start" type="button">Spiel starten</button></div>
+  </main>
+  <script>
+    const game=document.querySelector('#game');
+    const start=document.querySelector('#start');
+    const result=document.querySelector('#result');
+    const shells=[];
+    let phase='intro', bunnyId=0, positions=[0,1,2], resizeTimer;
+    const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+    const slotX=()=>{const w=game.clientWidth;const spread=Math.min(300,Math.max(112,(w-128)/2.15));return [w/2-spread,w/2,w/2+spread]};
+    function place(animate=false){const slots=slotX();shells.forEach((shell,id)=>{const x=slots[positions[id]];if(!animate)shell.style.left=x+'px'})}
+    function makeShell(id){
+      const button=document.createElement('button');button.className='shell';button.type='button';button.disabled=true;button.setAttribute('aria-label',`Topf ${id+1}`);button.dataset.id=id;
+      const potBack=document.createElement('img');potBack.className='pot pot-back';potBack.src='assets/pot.png';potBack.alt='';potBack.draggable=false;
+      const layer=document.createElement('span');layer.className='content-layer';
+      const item=document.createElement('img');item.className='content';item.alt='';item.draggable=false;layer.append(item);
+      const potFront=document.createElement('img');potFront.className='pot pot-front';potFront.src='assets/pot.png';potFront.alt='';potFront.draggable=false;
+      button.append(potBack,layer,potFront);button.addEventListener('click',choose);game.append(button);shells.push(button);
+    }
+    for(let i=0;i<3;i++)makeShell(i);place();
+    function prepare(){
+      bunnyId=Math.floor(Math.random()*3);positions=[0,1,2];
+      shells.forEach((shell,id)=>{const img=shell.querySelector('.content');const bunny=id===bunnyId;img.src=bunny?'assets/bunny.png':'assets/egg.png';img.className='content'+(bunny?' bunny':'');shell.classList.remove('hidden','reveal');shell.disabled=true});
+      result.classList.remove('show');document.body.classList.remove('ready');place();
+    }
+    async function swap(a,b,duration){
+      const shellA=shells.find(s=>positions[+s.dataset.id]===a),shellB=shells.find(s=>positions[+s.dataset.id]===b);const slots=slotX();
+      const baseTop=shellA.offsetTop;
+      const animA=shellA.animate([{left:slots[a]+'px',top:baseTop+'px'},{left:(slots[a]+slots[b])/2+'px',top:(baseTop-28)+'px'},{left:slots[b]+'px',top:baseTop+'px'}],{duration,easing:'ease-in-out',fill:'forwards'});
+      const animB=shellB.animate([{left:slots[b]+'px',top:baseTop+'px'},{left:(slots[a]+slots[b])/2+'px',top:(baseTop+28)+'px'},{left:slots[a]+'px',top:baseTop+'px'}],{duration,easing:'ease-in-out',fill:'forwards'});
+      await Promise.all([animA.finished,animB.finished]);animA.cancel();animB.cancel();shellA.style.left=slots[b]+'px';shellB.style.left=slots[a]+'px';
+      positions[+shellA.dataset.id]=b;positions[+shellB.dataset.id]=a;
+    }
+    async function run(){
+      if(phase==='shuffle')return;phase='shuffle';start.disabled=true;start.textContent='Augen auf …';prepare();await wait(1250);
+      shells.forEach(s=>s.classList.add('hidden'));await wait(640);
+      const pairs=[[0,1],[1,2],[0,2]];let last=-1;
+      for(let i=0;i<18;i++){let idx;do{idx=Math.floor(Math.random()*pairs.length)}while(idx===last);last=idx;await swap(...pairs[idx],i<2?350:220)}
+      phase='choose';start.textContent='Wähle einen Topf';document.body.classList.add('ready');shells.forEach(s=>s.disabled=false);
+    }
+    async function choose(event){
+      if(phase!=='choose')return;phase='result';shells.forEach(s=>s.disabled=true);document.body.classList.remove('ready');
+      const chosen=event.currentTarget;chosen.classList.remove('hidden');chosen.classList.add('reveal');
+      const correct=+chosen.dataset.id===bunnyId;result.textContent=correct?'Richtig! Da ist der Hase! 🐰':'Schade – hier ist nur ein Ei. 🥚';result.classList.add('show');
+      await wait(500);start.disabled=false;start.textContent='Noch einmal spielen';
+    }
+    start.addEventListener('click',run);
+    window.addEventListener('resize',()=>{clearTimeout(resizeTimer);resizeTimer=setTimeout(()=>{if(phase!=='shuffle')place()},120)});
+    prepare();
+  </script>
+</body>
+</html>
